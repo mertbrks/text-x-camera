@@ -14,7 +14,8 @@
 <style>
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; background: #000; color: #fff; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; user-select: none; -webkit-user-select: none; }
-  video#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  /* contain, not cover: a tall phone screen would crop the sides and look zoomed in; preview = what gets recorded */
+  video#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   video#cam.front { transform: scaleX(-1); }
 
   /* narrow, centered, reading line right under the front camera so eyes stay on the lens */
@@ -367,7 +368,7 @@ async function startCam() {
   ac?.close();
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: S.facing, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } },
+      video: { facingMode: S.facing, width: { ideal: 1920 } }, // no forced aspect ratio: some phones crop the sensor to satisfy it
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (e) {
     $('err').textContent = 'Kamera/mikrofon açılamadı: ' + e.message + ' (HTTPS adres ve izin gerekir)';
