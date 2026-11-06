@@ -365,7 +365,7 @@ $('doneBtn').onclick = () => { S.text = $('text').value; S.seg = 0; save(); $('e
 let stream, ac, gainNode, recStream;
 async function startCam() {
   stream?.getTracks().forEach(t => t.stop());
-  ac?.close();
+  if (ac && ac.state !== 'closed') ac.close().catch(() => {});
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: S.facing, width: { ideal: 1920 } }, // no forced aspect ratio: some phones crop the sensor to satisfy it
@@ -437,6 +437,18 @@ const closeOut = () => { $('out').classList.remove('open'); $('clip').pause(); $
 $('shareBtn').onclick = () => navigator.share({ files: [file] }).catch(() => {});
 $('againBtn').onclick = () => { closeOut(); setPos(0); prompt.scrollTop = 0; };
 $('nextTakeBtn').onclick = () => { closeOut(); goSeg(1); };
+
+// ---------- release camera/mic when the app is left, so Safari's mic indicator goes off
+function stopCam() {
+  if (rec?.state === 'recording') rec.stop(); // save the take instead of losing it
+  setPlay(false); stopListen();
+  stream?.getTracks().forEach(t => t.stop());
+  ac?.close().catch(() => {});
+  stream = ac = gainNode = recStream = null;
+  cam.srcObject = null;
+}
+document.addEventListener('visibilitychange', () => document.hidden ? stopCam() : startCam());
+addEventListener('pagehide', stopCam);
 
 // ---------- start
 render();
