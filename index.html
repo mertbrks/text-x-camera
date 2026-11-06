@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prompter">
+<meta name="theme-color" content="#000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Prompter</title>
+<style>
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: #000; color: #fff; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  video#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  video#cam.front { transform: scaleX(-1); }
+
+  /* narrow, centered, reading line right under the front camera so eyes stay on the lens */
+  #prompt {
+    position: fixed; left: 50%; transform: translateX(-50%); width: min(78vw, 520px);
+    top: env(safe-area-inset-top); height: 32vh; border-radius: 0 0 18px 18px;
+    overflow-y: scroll; padding: 3vh 14px 32vh; background: rgba(0,0,0,.55); text-align: center;
+    font-size: var(--fs, 30px); line-height: 1.35; font-weight: 600; white-space: pre-wrap;
+    -webkit-mask-image: linear-gradient(transparent, #000 6%, #000 60%, transparent);
+    mask-image: linear-gradient(transparent, #000 6%, #000 60%, transparent);
+    scrollbar-width: none; touch-action: pan-y;
+  }
+  #prompt::-webkit-scrollbar { display: none; }
+  #prompt.mirror { transform: translateX(-50%) scaleX(-1); }
+  #prompt .w { transition: opacity .2s; }
+  #prompt .w.read { opacity: .4; }
+  #prompt .w.now { color: #ffd2c8; }
+  #marker { position: fixed; left: calc(50% - min(39vw, 260px) - 14px); top: calc(env(safe-area-inset-top) + 3vh + 8px);
+    width: 0; height: 0; border: 9px solid transparent; border-left-color: #ff5a3c; pointer-events: none; }
+  #listen { position: fixed; right: calc(50% - min(39vw, 260px) - 18px); top: calc(env(safe-area-inset-top) + 3vh + 12px);
+    width: 10px; height: 10px; border-radius: 50%; background: #3ddc84; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #listen.on { opacity: 1; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { transform: scale(1.6); opacity: .5; } }
+
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+    background: linear-gradient(transparent, rgba(0,0,0,.8) 30%); display: grid; gap: 10px; }
+  .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+  #settings { display: none; gap: 10px; background: rgba(28,28,30,.92); border-radius: 16px; padding: 12px 14px; }
+  #settings.open { display: grid; }
+  label { font-size: 13px; display: flex; align-items: center; gap: 8px; flex: 1; }
+  label span { min-width: 34px; }
+  input[type=range] { flex: 1; accent-color: #ff5a3c; }
+  button { background: rgba(255,255,255,.16); color: #fff; border: 0; border-radius: 22px; padding: 11px 15px; font-size: 15px; white-space: nowrap; }
+  button.on { background: #ff5a3c; }
+  button:disabled { opacity: .35; }
+  #seg { font-size: 14px; min-width: 70px; text-align: center; font-variant-numeric: tabular-nums; }
+  #rec { width: 70px; height: 70px; border-radius: 50%; border: 4px solid #fff; background: #ff3b30; padding: 0; flex: none; transition: all .2s; }
+  #rec.on { border-radius: 16px; transform: scale(.78); }
+  #time { font-variant-numeric: tabular-nums; min-width: 48px; text-align: center; }
+  body.recording .hide-rec { visibility: hidden; }
+  body.recording #settings { display: none; }
+  #toast { position: fixed; left: 50%; bottom: 190px; transform: translateX(-50%); background: rgba(28,28,30,.95); padding: 10px 16px;
+    border-radius: 14px; font-size: 14px; max-width: 86vw; text-align: center; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #count { position: fixed; inset: 0; display: none; place-items: center; font-size: 120px; font-weight: 800; pointer-events: none; text-shadow: 0 4px 30px #000; }
+
+  .sheet { position: fixed; inset: 0; background: #111; display: none; flex-direction: column;
+    padding: calc(14px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom)); gap: 10px; user-select: text; -webkit-user-select: text; }
+  .sheet.open { display: flex; }
+  #editor textarea { flex: 1; background: #1c1c1e; color: #fff; border: 0; border-radius: 12px; padding: 14px; font-size: 17px; line-height: 1.4; resize: none; }
+  #editor select { background: #1c1c1e; color: #fff; border: 0; border-radius: 12px; padding: 11px; font-size: 15px; flex: 1; }
+  .hint { font-size: 12.5px; color: #9a9aa0; }
+  #out { background: rgba(0,0,0,.94); align-items: center; justify-content: center; }
+  #out video { max-width: 100%; max-height: 58vh; border-radius: 12px; }
+  #out .row { flex-wrap: wrap; justify-content: center; }
+  #out a { text-decoration: none; color: #fff; background: rgba(255,255,255,.16); border-radius: 22px; padding: 11px 18px; font-size: 15px; }
+  #err { position: fixed; top: 45vh; left: 16px; right: 16px; text-align: center; font-size: 15px; color: #ffb4a6; }
+</style>
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<div id="err"></div>
+<div id="prompt"></div>
+<div id="marker"></div>
+<div id="listen"></div>
+<div id="count"></div>
+<div id="toast"></div>
+
+<div id="bar">
+  <div id="settings">
+    <div class="row">
+      <button id="modeVoice">🎙 Sesimi takip et</button>
+      <button id="modeSpeed">⏱ Sabit hız</button>
+    </div>
+    <label id="speedRow"><span>Hız</span><input id="speed" type="range" min="10" max="150" value="45"></label>
+    <label><span>Yazı</span><input id="size" type="range" min="18" max="56" value="30"></label>
+    <label><span>Ses</span><input id="gain" type="range" min="1" max="4" step="0.1" value="1.8"></label>
+    <div class="row">
+      <button id="mirrorBtn">Ayna</button>
+      <button id="flipBtn">Kamerayı çevir</button>
+      <button id="fsBtn">Tam ekran</button>
+    </div>
+  </div>
+  <div class="row hide-rec">
+    <button id="editBtn">Metin</button>
+    <button id="prevBtn" aria-label="Önceki bölüm">◀</button>
+    <span id="seg">1 / 1</span>
+    <button id="nextBtn" aria-label="Sonraki bölüm">▶</button>
+    <button id="setBtn" aria-label="Ayarlar">⚙</button>
+  </div>
+  <div class="row">
+    <button id="playBtn" class="hide-rec">▶ Başlat</button>
+    <span id="time">0:00</span>
+    <button id="rec" aria-label="Kaydı başlat"></button>
+  </div>
+</div>
+
+<div id="editor" class="sheet">
+  <div class="row">
+    <select id="tpl">
+      <option value="">Şablon ekle…</option>
+      <option value="hook">Reels: Kanca → Sorun → Çözüm → Çağrı</option>
+      <option value="before">Önce / Sonra</option>
+      <option value="box">Kutuda ne var?</option>
+      <option value="myth">Yanlış bilinen</option>
+    </select>
+    <button id="doneBtn" class="on">Tamam</button>
+  </div>
+  <textarea id="text" placeholder="Metnini buraya yapıştır…"></textarea>
+  <div class="hint">Satıra yalnızca <b>---</b> yazarsan metin bölümlere ayrılır; her bölüm ayrı çekim olur, takıldığın yeri tekrar çekersin.</div>
+</div>
+
+<div id="out" class="sheet">
+  <video id="clip" controls playsinline></video>
+  <div class="row">
+    <button id="shareBtn" class="on">Kaydet / Paylaş</button>
+    <a id="dl" download>İndir</a>
+  </div>
+  <div class="row">
+    <button id="againBtn">Bu bölümü tekrar çek</button>
+    <button id="nextTakeBtn">Sonraki bölüm ▶</button>
+  </div>
+</div>
+
+<script src="match.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const prompt = $('prompt'), cam = $('cam');
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const DEFAULT = `Merhaba! Bu metni "Metin" düğmesinden değiştir.
+
+Sesimi takip et açıksa sen okudukça metin kendiliğinden ilerler. Durursan o da durur.
+
+Metne dokunursan durur ya da devam eder. Parmağınla sürükleyip yerini kendin de bulabilirsin.
+---
+Bu ikinci bölüm. Alttaki oklarla bölümler arasında geçersin.
+
+Kırmızı düğme üçten geri sayar, kaydı ve metni birlikte başlatır.`;
+
+const TPL = {
+  hook: `[Kanca, ilk 2 saniye]
+Evde boyadın, kutudaki renk çıkmadı mı?
+---
+[Sorun]
+Çünkü kutudaki model senin saçın değil. Başlangıç rengin sonucu değiştirir.
+---
+[Çözüm]
+Bu yüzden her tonu açık, orta ve koyu saçta deneyip gösteriyoruz.
+---
+[Çağrı]
+Hangi tonu denememi istersin? Yoruma yaz.`,
+  before: `Bu benim saçım, boyamadan önce.
+---
+Kullandığım ton: 8.44 Tarçın Bakır. Kitte iki tüp var, uzun saça yetiyor.
+---
+Ve sonuç. Işıkta böyle, gölgede böyle.
+---
+Senin saç rengin ne? Yoruma yaz, sana uygun tonu söyleyeyim.`,
+  box: `Kutuyu birlikte açalım.
+---
+İçinde iki tüp boya, iki oksidan, iki çift eldiven ve bir bakım maskesi var.
+---
+İki tüp çünkü omuz altı saçta tek tüp yetmiyor.
+---
+Hangi tonu açmamı istersin?`,
+  myth: `Boyadan önce saçı yıkamak gerekir mi?
+---
+Yanlış bilinen bu.
+---
+Doğrusu şu:
+---
+Başka hangi bilgiyi merak ediyorsun? Yoruma yaz.`
+};
+
+// ---------- settings
+const store = JSON.parse(localStorage.getItem('prompter') || '{}');
+const S = { text: DEFAULT, speed: 45, size: 30, gain: 1.8, mirror: false, mode: SR ? 'voice' : 'speed', facing: 'user', seg: 0, ...store };
+if (!SR) S.mode = 'speed';
+const save = () => localStorage.setItem('prompter', JSON.stringify(S));
+$('speed').value = S.speed; $('size').value = S.size; $('gain').value = S.gain;
+prompt.classList.toggle('mirror', S.mirror);
+$('mirrorBtn').classList.toggle('on', S.mirror);
+if (!SR) $('modeVoice').disabled = true;
+
+let toastT;
+function toast(msg, ms = 2600) { $('toast').textContent = msg; $('toast').classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $('toast').classList.remove('show'), ms); }
+
+// ---------- script rendering
+let segs = [], spans = [], words = [], pos = 0;
+function render() {
+  segs = S.text.split(/^\s*---\s*$/m).map(s => s.trim()).filter(Boolean);
+  if (!segs.length) segs = [''];
+  S.seg = Math.min(S.seg, segs.length - 1);
+  prompt.textContent = '';
+  spans = []; words = []; pos = 0;
+  for (const tok of segs[S.seg].split(/(\s+)/)) {
+    if (!tok) continue;
+    if (/^\s+$/.test(tok)) { prompt.append(tok); continue; }
+    const sp = document.createElement('span');
+    sp.className = 'w'; sp.textContent = tok;
+    prompt.append(sp);
+    spans.push(sp); words.push(norm(tok));
+  }
+  prompt.style.setProperty('--fs', S.size + 'px');
+  $('seg').textContent = `${S.seg + 1} / ${segs.length}`;
+  $('prevBtn').disabled = S.seg === 0;
+  $('nextBtn').disabled = S.seg >= segs.length - 1;
+  setPos(0); prompt.scrollTop = 0;
+}
+function setPos(p) {
+  p = Math.max(0, Math.min(p, spans.length));
+  const lo = Math.min(p, pos), hi = Math.max(p, pos);
+  for (let i = lo; i < hi; i++) spans[i].classList.toggle('read', i < p);
+  spans[pos - 1]?.classList.remove('now');
+  pos = p;
+  if (S.mode === 'voice') spans[pos - 1]?.classList.add('now');
+}
+// index of the first word at the reading line (after a manual scroll)
+const lineIdx = () => { const top = prompt.scrollTop + pad() - 2; const i = spans.findIndex(s => s.offsetTop >= top); return i < 0 ? spans.length : i; };
+const goSeg = d => { if (rec?.state === 'recording') return; S.seg = Math.max(0, Math.min(segs.length - 1, S.seg + d)); save(); render(); };
+
+// ---------- mode
+function setMode(m) {
+  S.mode = m; save();
+  $('modeVoice').classList.toggle('on', m === 'voice');
+  $('modeSpeed').classList.toggle('on', m === 'speed');
+  $('speedRow').style.display = m === 'speed' ? '' : 'none';
+  spans.forEach(s => s.classList.remove('read', 'now'));
+  if (m === 'voice') setPos(pos);
+  if (playing) { setPlay(false); setPlay(true); }
+}
+
+// ---------- scrolling loop
+let playing = false, last = 0, carry = 0, held = false;
+const pad = () => parseFloat(getComputedStyle(prompt).paddingTop);
+function tick(t) {
+  if (playing && !held && last) {
+    if (S.mode === 'speed') {
+      carry += S.speed * (t - last) / 1000;
+      const px = Math.floor(carry);
+      if (px) { prompt.scrollTop += px; carry -= px; }
+    } else {
+      // ease the line of the last spoken word up to the reading line
+      const sp = spans[Math.max(0, pos - 1)];
+      if (sp) {
+        const d = sp.offsetTop - pad() - prompt.scrollTop;
+        if (Math.abs(d) > 1) prompt.scrollTop += d * Math.min(1, (t - last) / 120);
+      }
+    }
+  }
+  last = t;
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+function setPlay(on) {
+  playing = on;
+  $('playBtn').textContent = on ? '❚❚ Durdur' : '▶ Başlat';
+  if (S.mode === 'voice') on ? listen() : stopListen();
+}
+
+// ---------- speech following
+let recog, listening = false;
+function listen() {
+  if (!SR || listening) return;
+  listening = true;
+  recog = new SR();
+  recog.lang = 'tr-TR'; recog.continuous = true; recog.interimResults = true;
+  recog.onresult = e => {
+    const r = e.results[e.results.length - 1];
+    const heard = r[0].transcript.split(/\s+/).map(norm).filter(Boolean).slice(-4);
+    const p = matchPos(words, pos, heard);
+    if (p > pos) setPos(p);
+    if (pos >= spans.length && segs.length > 1 && S.seg < segs.length - 1 && rec?.state !== 'recording') toast('Bölüm bitti. ▶ ile sonrakine geç.');
+  };
+  recog.onerror = e => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    listening = false;
+    // e.g. mic busy with the recorder on some phones: fall back so the take isn't lost
+    toast('Ses takibi çalışmadı (' + e.error + '). Sabit hıza geçildi.', 4000);
+    setMode('speed');
+  };
+  recog.onend = () => { if (listening) try { recog.start(); } catch {} }; // browsers stop after silence
+  try { recog.start(); } catch { listening = false; }
+  $('listen').classList.add('on');
+}
+function stopListen() {
+  listening = false;
+  $('listen').classList.remove('on');
+  try { recog?.abort(); } catch {}
+}
+
+// ---------- touch: tap = start/stop, drag = find your place
+let down = null;
+prompt.addEventListener('pointerdown', e => { held = true; down = [e.clientX, e.clientY]; });
+addEventListener('pointerup', e => {
+  if (!down) return;
+  held = false;
+  const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]) >= 8;
+  down = null;
+  if (!moved) return setPlay(!playing);
+  setPos(lineIdx()); // after a drag, continue from the word at the reading line
+});
+addEventListener('pointercancel', () => { held = false; down = null; });
+
+// ---------- keyboard / bluetooth remote (page turners send arrows / PageUp/Down)
+addEventListener('keydown', e => {
+  if (document.querySelector('.sheet.open')) return;
+  const lh = S.size * 1.35;
+  const k = e.key;
+  if (k === ' ' || k === 'Enter') setPlay(!playing);
+  else if (k === 'ArrowDown' || k === 'PageDown') { prompt.scrollTop += lh * 2; if (S.mode === 'voice') setPos(lineIdx()); }
+  else if (k === 'ArrowUp' || k === 'PageUp') { prompt.scrollTop -= lh * 2; if (S.mode === 'voice') setPos(lineIdx()); }
+  else if (k === 'ArrowRight') goSeg(1);
+  else if (k === 'ArrowLeft') goSeg(-1);
+  else if (k === 'r' || k === 'R') $('rec').click();
+  else return;
+  e.preventDefault();
+});
+
+// ---------- controls
+$('playBtn').onclick = () => setPlay(!playing);
+$('prevBtn').onclick = () => goSeg(-1);
+$('nextBtn').onclick = () => goSeg(1);
+$('setBtn').onclick = () => { $('settings').classList.toggle('open'); $('setBtn').classList.toggle('on'); };
+$('modeVoice').onclick = () => setMode('voice');
+$('modeSpeed').onclick = () => setMode('speed');
+$('speed').oninput = () => { S.speed = +$('speed').value; save(); };
+$('size').oninput = () => { S.size = +$('size').value; prompt.style.setProperty('--fs', S.size + 'px'); save(); };
+$('gain').oninput = () => { S.gain = +$('gain').value; if (gainNode) gainNode.gain.value = S.gain; save(); };
+$('mirrorBtn').onclick = () => { S.mirror = !S.mirror; prompt.classList.toggle('mirror', S.mirror); $('mirrorBtn').classList.toggle('on', S.mirror); save(); };
+$('flipBtn').onclick = () => { if (rec?.state === 'recording') return; S.facing = S.facing === 'user' ? 'environment' : 'user'; save(); startCam(); };
+$('fsBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => toast('Bu tarayıcı tam ekranı desteklemiyor. Ana ekrana ekle.'));
+if (!document.documentElement.requestFullscreen) $('fsBtn').style.display = 'none';
+
+$('editBtn').onclick = () => { setPlay(false); $('text').value = S.text; $('editor').classList.add('open'); };
+$('tpl').onchange = () => {
+  const t = TPL[$('tpl').value]; $('tpl').value = '';
+  if (!t) return;
+  const ta = $('text');
+  ta.value = ta.value.trim() && ta.value !== DEFAULT ? ta.value.trim() + '\n---\n' + t : t;
+};
+$('doneBtn').onclick = () => { S.text = $('text').value; S.seg = 0; save(); $('editor').classList.remove('open'); render(); };
+
+// ---------- camera + boosted mic
+let stream, ac, gainNode, recStream;
+async function startCam() {
+  stream?.getTracks().forEach(t => t.stop());
+  ac?.close();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: S.facing, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) {
+    $('err').textContent = 'Kamera/mikrofon açılamadı: ' + e.message + ' (HTTPS adres ve izin gerekir)';
+    return;
+  }
+  $('err').textContent = '';
+  cam.srcObject = stream;
+  cam.classList.toggle('front', S.facing === 'user');
+  // quiet voice boost: gain then compressor so loud parts don't clip
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  gainNode = ac.createGain();
+  gainNode.gain.value = S.gain;
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -24; comp.ratio.value = 4;
+  const dest = ac.createMediaStreamDestination();
+  ac.createMediaStreamSource(stream).connect(gainNode).connect(comp).connect(dest);
+  recStream = new MediaStream([...stream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+}
+
+// ---------- recording
+let rec, chunks = [], t0, timer, blobUrl, file, wakeLock;
+const mime = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+
+$('rec').onclick = async () => {
+  if (rec?.state === 'recording') return rec.stop();
+  if (!recStream) return toast('Kamera açık değil.');
+  if ($('count').style.display === 'grid') return;
+  ac.resume(); // iOS starts AudioContext suspended until a user gesture; not awaited, it can hang without one
+  setPlay(false);
+  setPos(0); prompt.scrollTop = 0;
+  $('settings').classList.remove('open'); $('setBtn').classList.remove('on');
+  for (const n of [3, 2, 1]) { $('count').style.display = 'grid'; $('count').textContent = n; await new Promise(r => setTimeout(r, 800)); }
+  $('count').style.display = 'none';
+  chunks = [];
+  rec = new MediaRecorder(recStream, mime ? { mimeType: mime } : undefined);
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = showClip;
+  rec.start(1000);
+  document.body.classList.add('recording');
+  $('rec').classList.add('on');
+  wakeLock = await navigator.wakeLock?.request('screen').catch(() => null);
+  t0 = Date.now();
+  timer = setInterval(() => { const s = (Date.now() - t0) / 1000 | 0; $('time').textContent = `${s / 60 | 0}:${String(s % 60).padStart(2, '0')}`; }, 250);
+  setPlay(true);
+};
+
+function showClip() {
+  clearInterval(timer); setPlay(false);
+  wakeLock?.release().catch(() => {}); wakeLock = null;
+  document.body.classList.remove('recording');
+  $('rec').classList.remove('on');
+  const type = rec.mimeType || mime || 'video/webm';
+  const ext = type.includes('mp4') ? 'mp4' : 'webm';
+  const blob = new Blob(chunks, { type });
+  if (blobUrl) URL.revokeObjectURL(blobUrl);
+  blobUrl = URL.createObjectURL(blob);
+  const name = `cekim-b${S.seg + 1}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${ext}`;
+  file = new File([blob], name, { type });
+  $('clip').src = blobUrl;
+  $('dl').href = blobUrl; $('dl').download = name;
+  $('shareBtn').style.display = navigator.canShare?.({ files: [file] }) ? '' : 'none';
+  $('nextTakeBtn').style.display = S.seg < segs.length - 1 ? '' : 'none';
+  $('out').classList.add('open');
+}
+const closeOut = () => { $('out').classList.remove('open'); $('clip').pause(); $('time').textContent = '0:00'; };
+$('shareBtn').onclick = () => navigator.share({ files: [file] }).catch(() => {});
+$('againBtn').onclick = () => { closeOut(); setPos(0); prompt.scrollTop = 0; };
+$('nextTakeBtn').onclick = () => { closeOut(); goSeg(1); };
+
+// ---------- start
+render();
+setMode(S.mode);
+startCam();
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

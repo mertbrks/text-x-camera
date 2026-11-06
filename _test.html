@@ -1,0 +1,41 @@
+<meta charset="utf-8"><body style="margin:0;background:#333;color:#fff;font:13px monospace"><iframe id="f" style="width:390px;height:780px;border:0;margin:10px;float:left"></iframe><pre id="o" style="float:left;margin:10px"></pre>
+<script>
+(async () => {
+  localStorage.removeItem('prompter');
+  let html = await (await fetch('/index.html')).text();
+  html = html.replace('<head>', '<head><base href="/"><script>window.SpeechRecognition=class{constructor(){window.__rec=this}start(){window.__started=(window.__started||0)+1}abort(){}}<\/script>');
+  f.srcdoc = html;
+  await new Promise(r => f.onload = r); await new Promise(r => setTimeout(r, 300));
+  const ev = c => f.contentWindow.eval(c), out = [];
+  const T = (name, got, want) => out.push((JSON.stringify(got) === JSON.stringify(want) ? 'OK   ' : 'FAIL ') + name + ' -> ' + JSON.stringify(got));
+  T('default mode voice', ev('S.mode'), 'voice');
+  ev(`S.text = 'Merhaba ben Mert, bugün sana yeni tonu göstereceğim. Kutudaki değil senin saçındaki sonuç önemli. Bu ton tarçın bakır, ışıkta parlıyor.' + String.fromCharCode(10) + '---' + String.fromCharCode(10) + 'İkinci bölüm: yoruma yaz.'; S.seg = 0; render();`);
+  T('segments', ev('[segs.length, $("seg").textContent, $("prevBtn").disabled, $("nextBtn").disabled]'), [2, '1 / 2', true, false]);
+  ev('$("playBtn").click()');
+  T('listening started', ev('[window.__started, $("listen").classList.contains("on")]'), [1, true]);
+  ev(`__rec.onresult({results:[[{transcript:'merhaba ben mert bugün'}]]})`);
+  T('pos after 4 words', ev('pos'), 4);
+  ev(`__rec.onresult({results:[[{transcript:'kutudaki değil senin saçındaki'}]]})`);
+  T('jump to saçındaki', ev('[pos, spans[pos-1].textContent]'), [12, 'saçındaki']);
+  ev(`__rec.onresult({results:[[{transcript:'merhaba ben'}]]})`);
+  T('no backward jump', ev('pos'), 12);
+  T('read class', ev('[spans[0].classList.contains("read"), spans[14].classList.contains("read")]'), [true, false]);
+  await new Promise(r => setTimeout(r, 900));
+  T('scrolled to reading line', ev('Math.abs(spans[11].offsetTop - pad() - prompt.scrollTop) < 3 || prompt.scrollTop'), true);
+  ev('$("playBtn").click()');
+  T('stopped listening', ev('$("listen").classList.contains("on")'), false);
+  ev('$("nextBtn").click()');
+  T('next segment', ev('[$("seg").textContent, spans[0].textContent, pos]'), ['2 / 2', 'İkinci', 0]);
+  ev('setMode("speed"); $("playBtn").click()');
+  await new Promise(r => setTimeout(r, 1000));
+  T('speed mode scrolls', ev('prompt.scrollTop > 20'), true);
+  ev('$("playBtn").click(); $("prevBtn").click()');
+  ev('$("editBtn").click(); $("tpl").value="hook"; $("tpl").onchange(); $("doneBtn").click()');
+  T('template -> 4 segments', ev('[segs.length, spans[0].textContent]'), [6, 'Merhaba']);
+  ev('dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight"}))');
+  T('remote arrow -> next', ev('$("seg").textContent'), '2 / 6');
+  T('saved', ev('JSON.parse(localStorage.prompter).mode'), 'speed');
+  o.textContent = out.join('\n');
+  document.title = out.some(l => l.startsWith('FAIL')) ? 'FAILED' : 'ALL OK';
+})().catch(e => { o.textContent = 'ERROR ' + e.stack; document.title = 'ERROR'; });
+</script>
