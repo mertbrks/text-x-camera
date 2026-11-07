@@ -12,105 +12,142 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>Prompter</title>
 <style>
+  :root { --violet: #7b6cff; --violet2: #4a3cff; --glass: rgba(28,28,34,.72); --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; background: #000; color: #fff; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; user-select: none; -webkit-user-select: none; }
-  /* contain, not cover: a tall phone screen would crop the sides and look zoomed in; preview = what gets recorded */
-  video#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
-  video#cam.front { transform: scaleX(-1); }
+  button { font: inherit; color: #fff; border: 0; background: none; cursor: pointer; }
+  button:disabled { opacity: .3; }
 
-  /* narrow, centered, reading line right under the front camera so eyes stay on the lens */
+  /* ---- script panel: sits right under the front camera so eyes stay on the lens */
   #prompt {
-    position: fixed; left: 50%; transform: translateX(-50%); width: min(78vw, 520px);
-    top: env(safe-area-inset-top); height: 32vh; border-radius: 0 0 18px 18px;
-    overflow-y: scroll; padding: 3vh 14px 32vh; background: rgba(0,0,0,.55); text-align: center;
-    font-size: var(--fs, 30px); line-height: 1.35; font-weight: 600; white-space: pre-wrap;
-    -webkit-mask-image: linear-gradient(transparent, #000 6%, #000 60%, transparent);
-    mask-image: linear-gradient(transparent, #000 6%, #000 60%, transparent);
-    scrollbar-width: none; touch-action: pan-y;
+    position: fixed; left: 0; right: 0; top: 0; height: 30vh;
+    padding: 0 26px; overflow-y: scroll; scrollbar-width: none; touch-action: pan-y;
+    font-family: var(--mono); font-size: var(--fs, 22px); line-height: 1.45; font-weight: 600;
+    white-space: pre-wrap; color: #ececf1; letter-spacing: -.01em;
+    -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 55%, rgba(0,0,0,.25) 85%, transparent);
+    mask-image: linear-gradient(transparent, #000 22%, #000 55%, rgba(0,0,0,.25) 85%, transparent);
   }
   #prompt::-webkit-scrollbar { display: none; }
-  #prompt.mirror { transform: translateX(-50%) scaleX(-1); }
-  #prompt .w { transition: opacity .2s; }
-  #prompt .w.read { opacity: .4; }
-  #prompt .w.now { color: #ffd2c8; }
-  #marker { position: fixed; left: calc(50% - min(39vw, 260px) - 14px); top: calc(env(safe-area-inset-top) + 3vh + 8px);
-    width: 0; height: 0; border: 9px solid transparent; border-left-color: #ff5a3c; pointer-events: none; }
-  #listen { position: fixed; right: calc(50% - min(39vw, 260px) - 18px); top: calc(env(safe-area-inset-top) + 3vh + 12px);
-    width: 10px; height: 10px; border-radius: 50%; background: #3ddc84; opacity: 0; transition: opacity .2s; pointer-events: none; }
-  #listen.on { opacity: 1; animation: pulse 1.2s infinite; }
-  @keyframes pulse { 50% { transform: scale(1.6); opacity: .5; } }
+  #prompt.mirror { transform: scaleX(-1); }
+  #prompt.voice .w { color: #8d8d98; transition: color .25s; }
+  #prompt.voice .w.read { color: #55555e; }
+  #prompt.voice .w.near { color: #fff; }
+  #state { position: fixed; right: 12px; top: calc(env(safe-area-inset-top) + 8px); font-size: 11px; letter-spacing: .04em;
+    padding: 4px 9px; border-radius: 99px; background: rgba(255,255,255,.08); color: #aaa; pointer-events: none; display: flex; gap: 6px; align-items: center; }
+  #state i { width: 7px; height: 7px; border-radius: 50%; background: #555; }
+  #state.on i { background: #3ddc84; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
 
-  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
-    background: linear-gradient(transparent, rgba(0,0,0,.8) 30%); display: grid; gap: 10px; }
-  .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
-  #settings { display: none; gap: 10px; background: rgba(28,28,30,.92); border-radius: 16px; padding: 12px 14px; }
-  #settings.open { display: grid; }
-  label { font-size: 13px; display: flex; align-items: center; gap: 8px; flex: 1; }
-  label span { min-width: 34px; }
-  input[type=range] { flex: 1; accent-color: #ff5a3c; }
-  button { background: rgba(255,255,255,.16); color: #fff; border: 0; border-radius: 22px; padding: 11px 15px; font-size: 15px; white-space: nowrap; }
-  button.on { background: #ff5a3c; }
-  button:disabled { opacity: .35; }
-  #seg { font-size: 14px; min-width: 70px; text-align: center; font-variant-numeric: tabular-nums; }
-  #rec { width: 70px; height: 70px; border-radius: 50%; border: 4px solid #fff; background: #ff3b30; padding: 0; flex: none; transition: all .2s; }
-  #rec.on { border-radius: 16px; transform: scale(.78); }
-  #time { font-variant-numeric: tabular-nums; min-width: 48px; text-align: center; }
+  /* ---- camera card */
+  #card { position: fixed; left: 10px; border-radius: 34px; overflow: hidden; background: #0b0b12;
+    box-shadow: 0 0 0 1.5px rgba(123,108,255,.55), 0 0 40px 4px rgba(90,70,255,.45); }
+  #card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    box-shadow: inset 0 0 46px 10px rgba(80,60,255,.55), inset 0 0 0 1px rgba(255,255,255,.08); }
+  video#cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  video#cam.front { transform: scaleX(-1); }
+  #handle { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 120px; height: 26px; z-index: 3; touch-action: none; cursor: ns-resize; }
+  #handle::before { content: ""; position: absolute; left: 50%; top: 10px; width: 38px; height: 4px; margin-left: -19px; border-radius: 4px; background: rgba(255,255,255,.55); }
+  #err { position: absolute; inset: 0; display: grid; place-items: center; padding: 30px; text-align: center; font-size: 14px; color: #c9c3ff; z-index: 1; }
+  #err:empty { display: none; }
+
+  .chip { position: absolute; z-index: 3; background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-radius: 99px; font-size: 13px; display: flex; align-items: center; }
+  #segChip { top: 14px; left: 14px; padding: 2px; }
+  #segChip button { width: 30px; height: 30px; font-size: 17px; }
+  #seg { min-width: 38px; text-align: center; font-variant-numeric: tabular-nums; }
+  #time { top: 14px; right: 14px; padding: 6px 11px; font-variant-numeric: tabular-nums; }
+  #time.rec { background: rgba(255,59,48,.85); }
+
+  /* speed wheel on the right edge */
+  #wheel { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 3; display: flex; flex-direction: column;
+    align-items: center; padding: 6px 0; width: 34px; border-radius: 99px; background: rgba(0,0,0,.35); font-family: var(--mono); }
+  #wheel button { font-size: 11px; color: #8d8d98; padding: 6px 0; width: 100%; }
+  #wheel b { font-size: 15px; padding: 3px 0; }
+  #wheel small { font-size: 9px; color: #8d8d98; padding-top: 2px; }
+
+  #modePill { bottom: 96px; left: 50%; transform: translateX(-50%); padding: 3px; gap: 2px; }
+  #modePill button { padding: 6px 12px; border-radius: 99px; font-size: 13px; color: #ccc; }
+  #modePill button.on { background: #fff; color: #111; font-weight: 600; }
+
+  #bar { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 99px; background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .ib { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.1); }
+  .ib svg { width: 19px; height: 19px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ib.on { background: var(--violet); }
+  #rec { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; margin: 0 4px;
+    background: radial-gradient(circle at 50% 35%, #8f84ff, var(--violet2)); box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 0 22px rgba(110,90,255,.8); }
+  #rec span { width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: all .2s; }
+  #rec.on span { width: 18px; height: 18px; border-radius: 5px; }
   body.recording .hide-rec { visibility: hidden; }
-  body.recording #settings { display: none; }
-  #toast { position: fixed; left: 50%; bottom: 190px; transform: translateX(-50%); background: rgba(28,28,30,.95); padding: 10px 16px;
-    border-radius: 14px; font-size: 14px; max-width: 86vw; text-align: center; opacity: 0; transition: opacity .3s; pointer-events: none; }
-  #toast.show { opacity: 1; }
-  #count { position: fixed; inset: 0; display: none; place-items: center; font-size: 120px; font-weight: 800; pointer-events: none; text-shadow: 0 4px 30px #000; }
+  body.recording #bar .hide-rec { display: none; } /* bar shrinks to just the record button */
 
-  .sheet { position: fixed; inset: 0; background: #111; display: none; flex-direction: column;
-    padding: calc(14px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom)); gap: 10px; user-select: text; -webkit-user-select: text; }
+  #count { position: absolute; inset: 0; z-index: 4; display: none; place-items: center; font-size: 110px; font-weight: 800; text-shadow: 0 4px 40px rgba(80,60,255,.9); pointer-events: none; }
+  #toast { position: fixed; left: 50%; top: 32vh; transform: translateX(-50%); z-index: 20; background: var(--glass); backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px); padding: 10px 16px; border-radius: 14px; font-size: 14px; max-width: 86vw; text-align: center; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+
+  /* ---- sheets */
+  .sheet { position: fixed; inset: 0; z-index: 10; display: none; flex-direction: column; gap: 12px; background: #0b0b10;
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); user-select: text; -webkit-user-select: text; }
   .sheet.open { display: flex; }
-  #editor textarea { flex: 1; background: #1c1c1e; color: #fff; border: 0; border-radius: 12px; padding: 14px; font-size: 17px; line-height: 1.4; resize: none; }
-  #editor select { background: #1c1c1e; color: #fff; border: 0; border-radius: 12px; padding: 11px; font-size: 15px; flex: 1; }
-  .hint { font-size: 12.5px; color: #9a9aa0; }
+  .sheet h2 { font-size: 17px; font-weight: 600; flex: 1; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .btn { padding: 11px 16px; border-radius: 99px; background: rgba(255,255,255,.1); font-size: 15px; white-space: nowrap; text-decoration: none; color: #fff; }
+  .btn.primary { background: var(--violet); }
+  #editor textarea { flex: 1; background: #16161d; color: #fff; border: 1px solid #23232c; border-radius: 16px; padding: 16px; font: 16px/1.5 var(--mono); resize: none; }
+  #editor select { background: #16161d; color: #fff; border: 1px solid #23232c; border-radius: 12px; padding: 11px; font-size: 15px; flex: 1; }
+  .hint { font-size: 12.5px; color: #8d8d98; }
+  #settings { top: auto; height: auto; border-radius: 26px 26px 0 0; background: #121218; box-shadow: 0 -10px 40px rgba(0,0,0,.6); }
+  #settings label { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  #settings label span { width: 108px; color: #c8c8d0; }
+  input[type=range] { flex: 1; accent-color: var(--violet); }
   #out { background: rgba(0,0,0,.94); align-items: center; justify-content: center; }
-  #out video { max-width: 100%; max-height: 58vh; border-radius: 12px; }
+  #out video { max-width: 100%; max-height: 58vh; border-radius: 22px; box-shadow: 0 0 30px rgba(90,70,255,.45); }
   #out .row { flex-wrap: wrap; justify-content: center; }
-  #out a { text-decoration: none; color: #fff; background: rgba(255,255,255,.16); border-radius: 22px; padding: 11px 18px; font-size: 15px; }
-  #err { position: fixed; top: 45vh; left: 16px; right: 16px; text-align: center; font-size: 15px; color: #ffb4a6; }
 </style>
 </head>
 <body>
-<video id="cam" autoplay playsinline muted></video>
-<div id="err"></div>
 <div id="prompt"></div>
-<div id="marker"></div>
-<div id="listen"></div>
-<div id="count"></div>
-<div id="toast"></div>
+<div id="state"><i></i><span id="stateTxt">dokun: başlat</span></div>
 
-<div id="bar">
-  <div id="settings">
-    <div class="row">
-      <button id="modeVoice">🎙 Sesimi takip et</button>
-      <button id="modeSpeed">⏱ Sabit hız</button>
-    </div>
-    <label id="speedRow"><span>Hız</span><input id="speed" type="range" min="10" max="150" value="45"></label>
-    <label><span>Yazı</span><input id="size" type="range" min="18" max="56" value="30"></label>
-    <label><span>Ses</span><input id="gain" type="range" min="1" max="4" step="0.1" value="1.8"></label>
-    <div class="row">
-      <button id="mirrorBtn">Ayna</button>
-      <button id="flipBtn">Kamerayı çevir</button>
-      <button id="fsBtn">Tam ekran</button>
-    </div>
+<div id="card">
+  <video id="cam" autoplay playsinline muted></video>
+  <div id="err"></div>
+  <div id="handle" title="Sürükle: metin alanını büyüt/küçült"></div>
+  <div id="segChip" class="chip hide-rec">
+    <button id="prevBtn" aria-label="Önceki bölüm">‹</button><span id="seg">1/1</span><button id="nextBtn" aria-label="Sonraki bölüm">›</button>
   </div>
-  <div class="row hide-rec">
-    <button id="editBtn">Metin</button>
-    <button id="prevBtn" aria-label="Önceki bölüm">◀</button>
-    <span id="seg">1 / 1</span>
-    <button id="nextBtn" aria-label="Sonraki bölüm">▶</button>
-    <button id="setBtn" aria-label="Ayarlar">⚙</button>
+  <div id="time" class="chip">0:00</div>
+  <div id="wheel">
+    <small>hız</small>
+    <button id="spUp" aria-label="Hızlandır"></button>
+    <b id="spNow"></b>
+    <button id="spDown" aria-label="Yavaşlat"></button>
   </div>
+  <div id="modePill" class="chip hide-rec">
+    <button id="modeVoice">Sesle</button><button id="modeSpeed">Sabit</button>
+  </div>
+  <div id="bar">
+    <button class="ib hide-rec" id="topBtn" aria-label="Başa dön"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+    <button class="ib hide-rec" id="editBtn" aria-label="Metin"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+    <button id="rec" aria-label="Kaydı başlat"><span></span></button>
+    <button class="ib hide-rec" id="setBtn" aria-label="Ayarlar"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+    <button class="ib hide-rec" id="flipBtn" aria-label="Kamerayı çevir"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg></button>
+  </div>
+  <div id="count"></div>
+</div>
+<div id="toast"></div>
+<div id="sab" style="position:fixed;bottom:0;height:env(safe-area-inset-bottom);visibility:hidden"></div>
+
+<div id="settings" class="sheet">
+  <div class="row"><h2>Ayarlar</h2><button class="btn" id="setClose">Kapat</button></div>
+  <label><span>Yazı boyu</span><input id="size" type="range" min="16" max="44" value="22"></label>
+  <label><span>Ses güçlendirme</span><input id="gain" type="range" min="1" max="4" step="0.1" value="1.8"></label>
   <div class="row">
-    <button id="playBtn" class="hide-rec">▶ Başlat</button>
-    <span id="time">0:00</span>
-    <button id="rec" aria-label="Kaydı başlat"></button>
+    <button class="btn" id="mirrorBtn">Metni aynala</button>
+    <button class="btn" id="fsBtn">Tam ekran</button>
   </div>
+  <div class="hint">Metne dokun: başlat/durdur · sürükle: yerini bul · kartın üstündeki çizgiyi sürükle: metin alanı · klavye/kumanda: boşluk, oklar, R</div>
 </div>
 
 <div id="editor" class="sheet">
@@ -122,7 +159,7 @@
       <option value="box">Kutuda ne var?</option>
       <option value="myth">Yanlış bilinen</option>
     </select>
-    <button id="doneBtn" class="on">Tamam</button>
+    <button id="doneBtn" class="btn primary">Tamam</button>
   </div>
   <textarea id="text" placeholder="Metnini buraya yapıştır…"></textarea>
   <div class="hint">Satıra yalnızca <b>---</b> yazarsan metin bölümlere ayrılır; her bölüm ayrı çekim olur, takıldığın yeri tekrar çekersin.</div>
@@ -131,30 +168,30 @@
 <div id="out" class="sheet">
   <video id="clip" controls playsinline></video>
   <div class="row">
-    <button id="shareBtn" class="on">Kaydet / Paylaş</button>
-    <a id="dl" download>İndir</a>
+    <button id="shareBtn" class="btn primary">Kaydet / Paylaş</button>
+    <a id="dl" class="btn" download>İndir</a>
   </div>
   <div class="row">
-    <button id="againBtn">Bu bölümü tekrar çek</button>
-    <button id="nextTakeBtn">Sonraki bölüm ▶</button>
+    <button id="againBtn" class="btn">Bu bölümü tekrar çek</button>
+    <button id="nextTakeBtn" class="btn">Sonraki bölüm ›</button>
   </div>
 </div>
 
 <script src="match.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const prompt = $('prompt'), cam = $('cam');
+const prompt = $('prompt'), cam = $('cam'), card = $('card');
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-const DEFAULT = `Merhaba! Bu metni "Metin" düğmesinden değiştir.
+const DEFAULT = `Merhaba! Bu metni alttaki liste düğmesinden değiştir.
 
-Sesimi takip et açıksa sen okudukça metin kendiliğinden ilerler. Durursan o da durur.
+"Sesle" açıksa sen okudukça metin kendiliğinden ilerler. Durursan o da durur.
 
 Metne dokunursan durur ya da devam eder. Parmağınla sürükleyip yerini kendin de bulabilirsin.
 ---
-Bu ikinci bölüm. Alttaki oklarla bölümler arasında geçersin.
+Bu ikinci bölüm. Kartın sol üstündeki oklarla bölümler arasında geçersin.
 
-Kırmızı düğme üçten geri sayar, kaydı ve metni birlikte başlatır.`;
+Mor düğme üçten geri sayar, kaydı ve metni birlikte başlatır.`;
 
 const TPL = {
   hook: `[Kanca, ilk 2 saniye]
@@ -192,17 +229,44 @@ Başka hangi bilgiyi merak ediyorsun? Yoruma yaz.`
 };
 
 // ---------- settings
-const store = JSON.parse(localStorage.getItem('prompter') || '{}');
-const S = { text: DEFAULT, speed: 45, size: 30, gain: 1.8, mirror: false, mode: SR ? 'voice' : 'speed', facing: 'user', seg: 0, ...store };
+let store = {};
+try { store = JSON.parse(localStorage.getItem('prompter') || '{}'); } catch {}
+const S = { text: DEFAULT, speed: 45, size: 22, gain: 1.8, mirror: false, mode: SR ? 'voice' : 'speed', facing: 'user', seg: 0, th: .3, ...store };
 if (!SR) S.mode = 'speed';
-const save = () => localStorage.setItem('prompter', JSON.stringify(S));
-$('speed').value = S.speed; $('size').value = S.size; $('gain').value = S.gain;
+if (S.size > 44) S.size = 22; // older version used bigger sans-serif sizes
+const save = () => { try { localStorage.setItem('prompter', JSON.stringify(S)); } catch {} };
+$('size').value = S.size; $('gain').value = S.gain;
 prompt.classList.toggle('mirror', S.mirror);
-$('mirrorBtn').classList.toggle('on', S.mirror);
+$('mirrorBtn').classList.toggle('primary', S.mirror);
 if (!SR) $('modeVoice').disabled = true;
 
 let toastT;
 function toast(msg, ms = 2600) { $('toast').textContent = msg; $('toast').classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $('toast').classList.remove('show'), ms); }
+
+// ---------- layout: text panel on top, camera card sized to the video's own shape (no crop, no bars)
+let ar = 9 / 16;
+function layout() {
+  const safeB = $('sab').offsetHeight;
+  const ph = Math.round(innerHeight * S.th);
+  prompt.style.height = ph + 'px';
+  prompt.style.paddingTop = Math.round(ph * .32) + 'px';
+  prompt.style.paddingBottom = Math.round(ph * .68) + 'px'; // lets the last line scroll up to the reading line
+  const availW = innerWidth - 20, availH = innerHeight - ph - 18 - safeB;
+  let w = Math.min(availW, availH * ar), h = w / ar;
+  card.style.width = w + 'px'; card.style.height = h + 'px';
+  card.style.left = (innerWidth - w) / 2 + 'px';
+  card.style.top = ph + 8 + 'px';
+}
+addEventListener('resize', layout);
+cam.addEventListener('loadedmetadata', () => { if (cam.videoWidth) { ar = cam.videoWidth / cam.videoHeight; layout(); } });
+
+// drag the card's handle to resize the text panel
+$('handle').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const move = ev => { S.th = Math.min(.5, Math.max(.18, ev.clientY / innerHeight)); layout(); };
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); save(); };
+  addEventListener('pointermove', move); addEventListener('pointerup', up);
+});
 
 // ---------- script rendering
 let segs = [], spans = [], words = [], pos = 0;
@@ -221,37 +285,45 @@ function render() {
     spans.push(sp); words.push(norm(tok));
   }
   prompt.style.setProperty('--fs', S.size + 'px');
-  $('seg').textContent = `${S.seg + 1} / ${segs.length}`;
+  $('seg').textContent = `${S.seg + 1}/${segs.length}`;
+  $('segChip').style.display = segs.length > 1 ? '' : 'none';
   $('prevBtn').disabled = S.seg === 0;
   $('nextBtn').disabled = S.seg >= segs.length - 1;
-  setPos(0); prompt.scrollTop = 0;
+  setPos(0, true); prompt.scrollTop = 0;
 }
-function setPos(p) {
+// read = already spoken, near = the next few words the eye should be on
+function setPos(p, force) {
   p = Math.max(0, Math.min(p, spans.length));
-  const lo = Math.min(p, pos), hi = Math.max(p, pos);
-  for (let i = lo; i < hi; i++) spans[i].classList.toggle('read', i < p);
-  spans[pos - 1]?.classList.remove('now');
+  if (p === pos && !force) return;
   pos = p;
-  if (S.mode === 'voice') spans[pos - 1]?.classList.add('now');
+  spans.forEach((s, i) => { s.classList.toggle('read', i < pos); s.classList.toggle('near', i >= pos - 2 && i < pos + 7); });
 }
 // index of the first word at the reading line (after a manual scroll)
 const lineIdx = () => { const top = prompt.scrollTop + pad() - 2; const i = spans.findIndex(s => s.offsetTop >= top); return i < 0 ? spans.length : i; };
 const goSeg = d => { if (rec?.state === 'recording') return; S.seg = Math.max(0, Math.min(segs.length - 1, S.seg + d)); save(); render(); };
 
-// ---------- mode
+// ---------- mode + speed wheel
+const STEP = 5;
+function drawWheel() {
+  $('spNow').textContent = S.speed;
+  $('spUp').textContent = Math.min(150, S.speed + STEP);
+  $('spDown').textContent = Math.max(10, S.speed - STEP);
+  $('wheel').style.display = S.mode === 'speed' ? '' : 'none';
+}
+$('spUp').onclick = () => { S.speed = Math.min(150, S.speed + STEP); drawWheel(); save(); };
+$('spDown').onclick = () => { S.speed = Math.max(10, S.speed - STEP); drawWheel(); save(); };
 function setMode(m) {
   S.mode = m; save();
   $('modeVoice').classList.toggle('on', m === 'voice');
   $('modeSpeed').classList.toggle('on', m === 'speed');
-  $('speedRow').style.display = m === 'speed' ? '' : 'none';
-  spans.forEach(s => s.classList.remove('read', 'now'));
-  if (m === 'voice') setPos(pos);
+  prompt.classList.toggle('voice', m === 'voice');
+  drawWheel();
   if (playing) { setPlay(false); setPlay(true); }
 }
 
 // ---------- scrolling loop
 let playing = false, last = 0, carry = 0, held = false;
-const pad = () => parseFloat(getComputedStyle(prompt).paddingTop);
+const pad = () => parseFloat(prompt.style.paddingTop) || 0;
 function tick(t) {
   if (playing && !held && last) {
     if (S.mode === 'speed') {
@@ -274,7 +346,8 @@ requestAnimationFrame(tick);
 
 function setPlay(on) {
   playing = on;
-  $('playBtn').textContent = on ? '❚❚ Durdur' : '▶ Başlat';
+  $('stateTxt').textContent = on ? (S.mode === 'voice' ? 'dinliyor' : 'akıyor') : 'dokun: başlat';
+  $('state').classList.toggle('on', on);
   if (S.mode === 'voice') on ? listen() : stopListen();
 }
 
@@ -290,7 +363,7 @@ function listen() {
     const heard = r[0].transcript.split(/\s+/).map(norm).filter(Boolean).slice(-4);
     const p = matchPos(words, pos, heard);
     if (p > pos) setPos(p);
-    if (pos >= spans.length && segs.length > 1 && S.seg < segs.length - 1 && rec?.state !== 'recording') toast('Bölüm bitti. ▶ ile sonrakine geç.');
+    if (pos >= spans.length && S.seg < segs.length - 1 && rec?.state !== 'recording') toast('Bölüm bitti. › ile sonrakine geç.');
   };
   recog.onerror = e => {
     if (e.error === 'no-speech' || e.error === 'aborted') return;
@@ -301,11 +374,9 @@ function listen() {
   };
   recog.onend = () => { if (listening) try { recog.start(); } catch {} }; // browsers stop after silence
   try { recog.start(); } catch { listening = false; }
-  $('listen').classList.add('on');
 }
 function stopListen() {
   listening = false;
-  $('listen').classList.remove('on');
   try { recog?.abort(); } catch {}
 }
 
@@ -325,7 +396,7 @@ addEventListener('pointercancel', () => { held = false; down = null; });
 // ---------- keyboard / bluetooth remote (page turners send arrows / PageUp/Down)
 addEventListener('keydown', e => {
   if (document.querySelector('.sheet.open')) return;
-  const lh = S.size * 1.35;
+  const lh = S.size * 1.45;
   const k = e.key;
   if (k === ' ' || k === 'Enter') setPlay(!playing);
   else if (k === 'ArrowDown' || k === 'PageDown') { prompt.scrollTop += lh * 2; if (S.mode === 'voice') setPos(lineIdx()); }
@@ -338,16 +409,16 @@ addEventListener('keydown', e => {
 });
 
 // ---------- controls
-$('playBtn').onclick = () => setPlay(!playing);
+$('topBtn').onclick = () => { setPos(0, true); prompt.scrollTop = 0; };
 $('prevBtn').onclick = () => goSeg(-1);
 $('nextBtn').onclick = () => goSeg(1);
-$('setBtn').onclick = () => { $('settings').classList.toggle('open'); $('setBtn').classList.toggle('on'); };
 $('modeVoice').onclick = () => setMode('voice');
 $('modeSpeed').onclick = () => setMode('speed');
-$('speed').oninput = () => { S.speed = +$('speed').value; save(); };
+$('setBtn').onclick = () => { setPlay(false); $('settings').classList.add('open'); };
+$('setClose').onclick = () => $('settings').classList.remove('open');
 $('size').oninput = () => { S.size = +$('size').value; prompt.style.setProperty('--fs', S.size + 'px'); save(); };
 $('gain').oninput = () => { S.gain = +$('gain').value; if (gainNode) gainNode.gain.value = S.gain; save(); };
-$('mirrorBtn').onclick = () => { S.mirror = !S.mirror; prompt.classList.toggle('mirror', S.mirror); $('mirrorBtn').classList.toggle('on', S.mirror); save(); };
+$('mirrorBtn').onclick = () => { S.mirror = !S.mirror; prompt.classList.toggle('mirror', S.mirror); $('mirrorBtn').classList.toggle('primary', S.mirror); save(); };
 $('flipBtn').onclick = () => { if (rec?.state === 'recording') return; S.facing = S.facing === 'user' ? 'environment' : 'user'; save(); startCam(); };
 $('fsBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => toast('Bu tarayıcı tam ekranı desteklemiyor. Ana ekrana ekle.'));
 if (!document.documentElement.requestFullscreen) $('fsBtn').style.display = 'none';
@@ -398,8 +469,7 @@ $('rec').onclick = async () => {
   if ($('count').style.display === 'grid') return;
   ac.resume(); // iOS starts AudioContext suspended until a user gesture; not awaited, it can hang without one
   setPlay(false);
-  setPos(0); prompt.scrollTop = 0;
-  $('settings').classList.remove('open'); $('setBtn').classList.remove('on');
+  setPos(0, true); prompt.scrollTop = 0;
   for (const n of [3, 2, 1]) { $('count').style.display = 'grid'; $('count').textContent = n; await new Promise(r => setTimeout(r, 800)); }
   $('count').style.display = 'none';
   chunks = [];
@@ -408,7 +478,7 @@ $('rec').onclick = async () => {
   rec.onstop = showClip;
   rec.start(1000);
   document.body.classList.add('recording');
-  $('rec').classList.add('on');
+  $('rec').classList.add('on'); $('time').classList.add('rec');
   wakeLock = await navigator.wakeLock?.request('screen').catch(() => null);
   t0 = Date.now();
   timer = setInterval(() => { const s = (Date.now() - t0) / 1000 | 0; $('time').textContent = `${s / 60 | 0}:${String(s % 60).padStart(2, '0')}`; }, 250);
@@ -419,7 +489,7 @@ function showClip() {
   clearInterval(timer); setPlay(false);
   wakeLock?.release().catch(() => {}); wakeLock = null;
   document.body.classList.remove('recording');
-  $('rec').classList.remove('on');
+  $('rec').classList.remove('on'); $('time').classList.remove('rec');
   const type = rec.mimeType || mime || 'video/webm';
   const ext = type.includes('mp4') ? 'mp4' : 'webm';
   const blob = new Blob(chunks, { type });
@@ -435,7 +505,7 @@ function showClip() {
 }
 const closeOut = () => { $('out').classList.remove('open'); $('clip').pause(); $('time').textContent = '0:00'; };
 $('shareBtn').onclick = () => navigator.share({ files: [file] }).catch(() => {});
-$('againBtn').onclick = () => { closeOut(); setPos(0); prompt.scrollTop = 0; };
+$('againBtn').onclick = () => { closeOut(); setPos(0, true); prompt.scrollTop = 0; };
 $('nextTakeBtn').onclick = () => { closeOut(); goSeg(1); };
 
 // ---------- release camera/mic when the app is left, so Safari's mic indicator goes off
@@ -451,6 +521,7 @@ document.addEventListener('visibilitychange', () => document.hidden ? stopCam() 
 addEventListener('pagehide', stopCam);
 
 // ---------- start
+layout();
 render();
 setMode(S.mode);
 startCam();
